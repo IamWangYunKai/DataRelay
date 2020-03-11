@@ -10,16 +10,18 @@ IM_HEIGHT = 480
 throttle = 0.0
 steer = 0.0
 reverse = False
+brake = 0.0
 
 class Controller(Informer):
     def parse_cmd(self, cmd):
-        global throttle, steer, reverse
+        global throttle, steer, reverse, brake
         steer = 0.75*cmd['w']
+        brake = cmd['b']
         if cmd['v'] >= 0:
-            throttle = 0.6*cmd['v']
+            throttle = 0.7*cmd['v']
             reverse = False
         else:
-            throttle = - 0.6*cmd['v']
+            throttle = - 0.7*cmd['v']
             reverse = True
     
 ifm = Controller()
@@ -82,7 +84,15 @@ try:
     world.set_weather(weather)
 
     while True:
-        vehicle.apply_control(carla.VehicleControl(throttle=throttle, steer=steer, reverse=reverse))
+        vehicle.apply_control(carla.VehicleControl(
+                throttle=throttle, 
+                steer=steer, 
+                reverse=reverse,
+                manual_gear_shift=True,
+                gear=1,
+                brake=brake,
+                hand_brake=False
+                ))
         w = get_sign(vehicle.get_angular_velocity().z)*get_norm(vehicle.get_angular_velocity().x, vehicle.get_angular_velocity().y, vehicle.get_angular_velocity().z)*math.pi/180
         v = get_norm(vehicle.get_velocity().x, vehicle.get_velocity().y, vehicle.get_velocity().z)
         c = reverse
