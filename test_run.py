@@ -5,31 +5,38 @@ import time
 import numpy as np
 from informer import Informer
 
-IM_WIDTH = 480*2
-IM_HEIGHT = 480
+IM_WIDTH = 240*2
+IM_HEIGHT = 240
 throttle = 0.0
 steer = 0.0
 reverse = False
 brake = 0.0
+hand_brake = False
+gear = 1
 
 class Controller(Informer):
     def parse_cmd(self, cmd):
-        global throttle, steer, reverse, brake
+        global throttle, steer, reverse, brake, hand_brake, gear
         steer = 0.75*cmd['w']
         brake = cmd['b']
+        gear = int(cmd['g'])
+        hand_brake = bool(cmd['h'])
         if cmd['v'] >= 0:
             throttle = 0.7*cmd['v']
             reverse = False
         else:
             throttle = - 0.7*cmd['v']
             reverse = True
+            if gear == 0:
+                throttle = 0.0
+            gear = 0 #CARLA feature
     
 ifm = Controller()
 
 def process_img(image):
     global ifm
     array = np.array(image.raw_data).reshape((image.height, image.width, 4))[:, :, :3]
-    ifm.send_vision(array)
+    ifm.send_vision(array, isGrey=True)
 
 def get_norm(*args):
     _sum = 0
@@ -75,8 +82,8 @@ try:
     
     weather = carla.WeatherParameters(
                 cloudyness=random.randint(0,80),#0-100
-                precipitation=random.randint(0,20),#0-100
-                precipitation_deposits=random.randint(0,20),#0-100
+                precipitation=0,#random.randint(0,20),#0-100
+                precipitation_deposits=0,#random.randint(0,20),#0-100
                 wind_intensity=random.randint(0,50),#0-100
                 sun_azimuth_angle=random.randint(30,120),#0-360
                 sun_altitude_angle=random.randint(30,90))#-90~90
@@ -89,9 +96,9 @@ try:
                 steer=steer, 
                 reverse=reverse,
                 manual_gear_shift=True,
-                gear=1,
+                gear=gear,
                 brake=brake,
-                hand_brake=False
+                hand_brake=hand_brake
                 ))
         w = get_sign(vehicle.get_angular_velocity().z)*get_norm(vehicle.get_angular_velocity().x, vehicle.get_angular_velocity().y, vehicle.get_angular_velocity().z)*math.pi/180
         v = get_norm(vehicle.get_velocity().x, vehicle.get_velocity().y, vehicle.get_velocity().z)
