@@ -5,6 +5,7 @@ import time
 import numpy as np
 from informer import Informer
 
+greyModel = False
 IM_WIDTH = 240*2
 IM_HEIGHT = 240
 throttle = 0.0
@@ -35,8 +36,9 @@ ifm = Controller()
 
 def process_img(image):
     global ifm
+    timestamp = time.time()
     array = np.array(image.raw_data).reshape((image.height, image.width, 4))[:, :, :3]
-    ifm.send_vision(array, isGrey=True)
+    ifm.send_vision(array, isGrey=greyModel, timestamp=timestamp)
 
 def get_norm(*args):
     _sum = 0
@@ -60,7 +62,7 @@ try:
     spawn_point = random.choice(world.get_map().get_spawn_points())
 
     vehicle = world.spawn_actor(bp, spawn_point)
-    #vehicle.set_autopilot(True)  # if you just wanted some NPCs to drive.
+    vehicle.set_autopilot(True)  # if you just wanted some NPCs to drive.
 
     actor_list.append(vehicle)
 
@@ -103,8 +105,8 @@ try:
         w = get_sign(vehicle.get_angular_velocity().z)*get_norm(vehicle.get_angular_velocity().x, vehicle.get_angular_velocity().y, vehicle.get_angular_velocity().z)*math.pi/180
         v = get_norm(vehicle.get_velocity().x, vehicle.get_velocity().y, vehicle.get_velocity().z)
         c = reverse
-        ifm.send_cmd(v, w, c)
-        time.sleep(0.016)
+        ifm.send_sensor_data(v, w, c)
+        #time.sleep(0.05)
 
 finally:
     print('destroying actors')
