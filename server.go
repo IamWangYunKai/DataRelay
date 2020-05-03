@@ -46,11 +46,12 @@ func read(socket *net.UDPConn, key string) {
 		}
 		var message Message
 		if err := json.Unmarshal(data[:n], &message); err != nil {
-			fmt.Println(err)
+			go relayNoId(data, n, port, key)
+			//fmt.Println(err)
 			continue
 		}
 		if message.Mtype == "register" {
-			fmt.Printf("Register <%s:%s>\n", message.Id, key)
+			fmt.Printf("Register <%s:%s> %s\n", key, message.Id, message.Data)
 			clientIPs[message.Id] = ip
 			clientPorts[message.Id+":"+key] = port
 			feedback := Message{
@@ -77,6 +78,18 @@ func relay(data []byte, n int, robotID string, key string) {
 			continue
 		}
 		if _, ok := clientPorts[otherID+":"+key]; ok {
+			clientAddr := &net.UDPAddr{IP: net.ParseIP(otherIP), Port: clientPorts[otherID+":"+key]}
+			clientSockets[key].WriteToUDP(data[:n], clientAddr)
+		}
+	}
+}
+
+func relayNoId(data []byte, n int, port int, key string) {
+	for otherID, otherIP := range clientIPs{
+		if _, ok := clientPorts[otherID+":"+key]; ok {
+			if clientPorts[otherID+":"+key] == port {
+				continue
+			}
 			clientAddr := &net.UDPAddr{IP: net.ParseIP(otherIP), Port: clientPorts[otherID+":"+key]}
 			clientSockets[key].WriteToUDP(data[:n], clientAddr)
 		}
