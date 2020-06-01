@@ -2,6 +2,6 @@
 
 ### TODO
 
-- [ ] Thread-safe map
+- [x] Thread-safe map
 - [ ] Connection state update and heartbeat bag send and receive
 - [ ] TCP or  UDP choose
