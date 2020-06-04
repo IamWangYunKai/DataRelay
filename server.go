@@ -69,8 +69,8 @@ func read(socket *net.UDPConn, key string) {
 }
 
 func relay(data []byte, n int, myID string, key string) {
-	clientTCPIPs.Range(func(robotID,ip interface{})bool{
-		if robotID == myID {
+	clientUDPIPs.Range(func(robotID,ip interface{})bool{
+		if robotID.(string) == myID {
 			return true
 		}
 		port, ok := clientUDPPorts.Load(robotID.(string)+":"+key)
@@ -78,7 +78,7 @@ func relay(data []byte, n int, myID string, key string) {
 			fmt.Println("No UDP port in key", robotID.(string)+":"+key)
 			return true
 		}
-		clientAddr := &net.UDPAddr{IP: net.ParseIP(robotID.(string)), Port: port.(int)}
+		clientAddr := &net.UDPAddr{IP: net.ParseIP(ip.(string)), Port: port.(int)}
 		socket, ok := clientUDPSockets.Load(key)
 		if !ok {
 			return true
@@ -89,7 +89,7 @@ func relay(data []byte, n int, myID string, key string) {
 }
 
 func relayUDPRaw(data []byte, n int, myPort int, key string) {
-	clientTCPIPs.Range(func(robotId,ip interface{})bool{
+	clientUDPIPs.Range(func(robotId,ip interface{})bool{
 		_port, ok := clientUDPPorts.Load(robotId.(string)+":"+key)
 		if !ok {
 			fmt.Println("No key in UDP port", robotId.(string)+":"+key)
