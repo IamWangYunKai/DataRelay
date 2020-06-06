@@ -11,19 +11,24 @@ import (
 	"text/template"
 	"time"
 )
-
-var portsDict = map[string]int{
+/* bind port for UDP socket
+ * 'message' data use Message struct protocol and relayUDP function
+ * others use raw data package protocol and relayUDPRaw function
+ */
+var UDPPortsDict = map[string]int{
     "sensor":10002,
     "cmd":10003,
     "debug":10004,
     "clock":10005,
     "message":10006,
 }
-
-var portsDictTCP = map[string]int{
+/* bind port for TCP socket
+ * 'vision' data use raw image encode data protocol and relayTCPRaw function
+ */
+var TCPPortsDict = map[string]int{
 	"vision":10001,
 }
-// Comunication protocol
+// communication protocol for register information and 'message' data
 type Message struct {
   Mtype string
   Pri int
@@ -31,14 +36,33 @@ type Message struct {
   Data string
 }
 // Thread-safe maps
+/*
+ * clientUDPIPs ---> key: robotId, value: ip(string)
+ * clientUDPPorts ---> key: robotID:dataKey(string), value: ip(int)
+ * clientUDPSockets ---> key: dataKey(string), value: socket(*net.UDPConn)
+ * clientUDPSockets will be established at the beginning
+ */
 var clientUDPIPs, clientUDPPorts, clientUDPSockets sync.Map
+/*
+ * clientTCPIPs ---> key: robotId, value: ip(string)
+ * clientTCPPorts ---> key: robotID:dataKey(string), value: ip(int)
+ * clientTCPSockets ---> key: IP:port(string), value: socket(net.Conn)
+ */
 var clientTCPIPs, clientTCPPorts, clientTCPSockets sync.Map
+/* FPS counters, they will be cleared every second by FPSCounter function
+ * UDPRecvCnt, UDPRelayCnt ---> key: robotID:dataKey(string)
+ * TCPRecvCnt, TCPRelayCnt ---> key: IP:port(string)
+ */
 var UDPRecvCnt, TCPRecvCnt, UDPRelayCnt, TCPRelayCnt sync.Map
+/* store TCP and UDP connection information
+ * UDPStateMap ---> key: robotID:dataKey(string), value: SocketState
+ * TCPStateMap ---> key: IP:port(string), value: SocketState
+ */
 var UDPStateMap, TCPStateMap sync.Map
 // Block the main function
 var done = make(chan struct{})
 
-// Web visualization information
+// web visualization information
 type SocketState struct {
 	Key string
 	Type string
@@ -50,15 +74,17 @@ type SocketState struct {
 
 // index.html resource
 var myTemplate *template.Template
-var mutex sync.RWMutex
+// data for web HTML
 var socketStates []SocketState
-
+// slice is not thread-safe
+var mutex sync.RWMutex
+// check error, function just prints the error information
 func checkErr(err error){
 	if err != nil {
 		fmt.Println(err)
 	}
 }
-
+// UDP step 1
 func readUDP(socket *net.UDPConn, key string) {
 	for {
 		data := make([]byte, 65535)
@@ -96,10 +122,16 @@ func readUDP(socket *net.UDPConn, key string) {
 		}
 	}
 }
-
+// UDP step 2-1
 func relayUDP(data []byte, n int, myID string, key string) {
 	cnt, _ := UDPRecvCnt.Load(myID+":"+key)
-	UDPRecvCnt.Store(myID+":"+key, cnt.(int)+1)
+	// check type for safety
+	switch cnt.(type) {
+	case int:
+		UDPRecvCnt.Store(myID+":"+key, cnt.(int)+1)
+	default:
+		UDPRecvCnt.Store(myID+":"+key, 0)
+	}
 	clientUDPIPs.Range(func(robotID, ip interface{})bool{
 		if robotID.(string) == myID {
 			return true
@@ -116,11 +148,17 @@ func relayUDP(data []byte, n int, myID string, key string) {
 		}
 		socket.(*net.UDPConn).WriteToUDP(data[:n], clientAddr)
 		cnt, _ := UDPRelayCnt.Load(myID+":"+key)
-		UDPRelayCnt.Store(myID+":"+key, cnt.(int)+1)
+		// check type for safety
+		switch cnt.(type) {
+		case int:
+			UDPRelayCnt.Store(myID+":"+key, cnt.(int)+1)
+		default:
+			UDPRelayCnt.Store(myID+":"+key, 0)
+		}
 		return true
 	})
 }
-
+// UDP step 2-2
 func relayUDPRaw(data []byte, n int, myIP string, myPort int, key string) {
 	var myID string
 	// find my ID
@@ -141,7 +179,13 @@ func relayUDPRaw(data []byte, n int, myIP string, myPort int, key string) {
 	})
 	// recv cnt ++
 	cnt, _ := UDPRecvCnt.Load(myID+":"+key)
-	UDPRecvCnt.Store(myID+":"+key, cnt.(int)+1)
+	// check type for safety
+	switch cnt.(type) {
+	case int:
+		UDPRecvCnt.Store(myID+":"+key, cnt.(int)+1)
+	default:
+		UDPRecvCnt.Store(myID+":"+key, 0)
+	}
 
 	clientUDPIPs.Range(func(robotId,ip interface{})bool{
 		// get port
@@ -162,11 +206,17 @@ func relayUDPRaw(data []byte, n int, myIP string, myPort int, key string) {
 		socket.(*net.UDPConn).WriteToUDP(data[:n], clientAddr)
 		// relay cnt ++
 		cnt, _ := UDPRelayCnt.Load(myID+":"+key)
-		UDPRelayCnt.Store(myID+":"+key, cnt.(int)+1)
+		// check type for safety
+		switch cnt.(type) {
+		case int:
+			UDPRelayCnt.Store(myID+":"+key, cnt.(int)+1)
+		default:
+			UDPRelayCnt.Store(myID+":"+key, 0)
+		}
 		return true
 	})
 }
-
+// TCP step 1
 func readTCP(socket *net.TCPListener, key string){
 	for {
 		conn, err := socket.Accept()
@@ -179,7 +229,7 @@ func readTCP(socket *net.TCPListener, key string){
 		go handleTCP(conn, ip, port, remoteAddr, key)
 	}
 }
-
+// TCP step 2
 func handleTCP(conn net.Conn, ip string, port int, remoteAddr net.Addr, key string){
 	defer conn.Close()
 	for {
@@ -221,10 +271,16 @@ func handleTCP(conn net.Conn, ip string, port int, remoteAddr net.Addr, key stri
 	}
 	fmt.Printf("Close TCP connection <%s:%d> as %s\n", ip, port, key)
 }
-
+// TCP step 3-1
 func relayTCP(data []byte, n int, robotID string, key string, ip string, port int) {
 	cnt, _ := TCPRecvCnt.Load(ip+":"+strconv.Itoa(port))
-	TCPRecvCnt.Store(ip+":"+strconv.Itoa(port), cnt.(int)+1)
+	// check type for safety
+	switch cnt.(type) {
+	case int:
+		TCPRecvCnt.Store(ip+":"+strconv.Itoa(port), cnt.(int)+1)
+	default:
+		TCPRecvCnt.Store(ip+":"+strconv.Itoa(port), 0)
+	}
 	clientTCPIPs.Range(func(otherID,value interface{})bool{
 		if otherID == robotID {
 			return true
@@ -235,14 +291,26 @@ func relayTCP(data []byte, n int, robotID string, key string, ip string, port in
 		}
 		conn.(net.Conn).Write(data[:n])
 		cnt, _ := TCPRelayCnt.Load(ip+":"+strconv.Itoa(port))
-		TCPRelayCnt.Store(ip+":"+strconv.Itoa(port), cnt.(int)+1)
+		// check type for safety
+		switch cnt.(type) {
+		case int:
+			TCPRelayCnt.Store(ip+":"+strconv.Itoa(port), cnt.(int)+1)
+		default:
+			TCPRelayCnt.Store(ip+":"+strconv.Itoa(port), 0)
+		}
 		return true
 	})
 }
-
+// TCP step 3-2
 func relayTCPRaw(data []byte, n int, remoteAddr net.Addr, key string) {
 	cnt, _ := TCPRecvCnt.Load(remoteAddr.String())
-	TCPRecvCnt.Store(remoteAddr.String(), cnt.(int)+1)
+	// check type for safety
+	switch cnt.(type) {
+	case int:
+		TCPRecvCnt.Store(remoteAddr.String(), cnt.(int)+1)
+	default:
+		TCPRecvCnt.Store(remoteAddr.String(), 0)
+	}
 	clientTCPIPs.Range(func(robotID,value interface{})bool{
 		if _, ok := clientTCPPorts.Load(robotID.(string)+":"+key); ok {
 			port, ok := clientTCPPorts.Load(robotID.(string)+":"+key)
@@ -260,7 +328,13 @@ func relayTCPRaw(data []byte, n int, remoteAddr net.Addr, key string) {
 			}
 			conn.(net.Conn).Write(data[:n])
 			cnt, _ := TCPRelayCnt.Load(remoteAddr.String())
-			TCPRelayCnt.Store(remoteAddr.String(), cnt.(int)+1)
+			// check type for safety
+			switch cnt.(type) {
+			case int:
+				TCPRelayCnt.Store(remoteAddr.String(), cnt.(int)+1)
+			default:
+				TCPRelayCnt.Store(remoteAddr.String(), 0)
+			}
 		}
 		return true
 	})
@@ -339,7 +413,7 @@ func webHandler(writer http.ResponseWriter, request *http.Request) {
 }
 
 func main() {
-	for key, port := range portsDict {
+	for key, port := range UDPPortsDict {
 		clientAddr := &net.UDPAddr{IP: net.IPv4zero, Port: port}
 		clientListener, err := net.ListenUDP("udp", clientAddr)
 		checkErr(err)
@@ -347,7 +421,7 @@ func main() {
 		go readUDP(clientListener, key)
 	}
 
-	for key, port := range portsDictTCP {
+	for key, port := range TCPPortsDict {
 		clientAddr, err := net.ResolveTCPAddr("tcp4", ":"+strconv.Itoa(port))
 		checkErr(err)
 		clientListener, err := net.ListenTCP("tcp", clientAddr)
